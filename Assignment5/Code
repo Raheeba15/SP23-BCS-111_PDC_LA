@@ -1,0 +1,113 @@
+Objective
+This lab focuses on dividing a large computational task (sum of a big vector) across multiple
+nodes (processes). Each node handles a subset of data, computes a partial sum, and
+combines results at the root process using collective MPI operations.
+Concepts Covered
+• Data decomposition (dividing large datasets)
+• Inter-process communication (MPI)
+• Reduction and collective operations (MPI_Reduce, MPI_Gather)
+• Understanding root and worker processes
+Step-by-Step Tasks
+Task 1: Vector Initialization – Create a large 1D vector A of size N = 10,000,000 and initialize
+with A[i] = i + 1.
+Task 2: Data Distribution – Divide A into sub-vectors and distribute them among all
+processes using MPI_Scatter().
+Task 3: Local Computation – Each process computes its partial sum.
+Task 4: Reduction – Use MPI_Reduce() to combine all partial sums at the root process.
+Task 5: Display Results – The root process prints the total sum and verifies it with the
+expected result.
+Code Implementation (Main Version)
+#include &lt;mpi.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+int main(int argc, char* argv[]) {
+int rank, size;
+long N = 10000000;
+double *A = NULL, *local_A = NULL;
+
+double local_sum = 0.0, global_sum = 0.0;
+MPI_Init(&amp;argc, &amp;argv);
+MPI_Comm_rank(MPI_COMM_WORLD, &amp;rank);
+MPI_Comm_size(MPI_COMM_WORLD, &amp;size);
+long local_n = N / size;
+local_A = (double*)malloc(local_n * sizeof(double));
+if (rank == 0) {
+A = (double*)malloc(N * sizeof(double));
+for (long i = 0; i &lt; N; i++)
+A[i] = i + 1;
+}
+MPI_Scatter(A, local_n, MPI_DOUBLE, local_A, local_n, MPI_DOUBLE, 0,
+MPI_COMM_WORLD);
+for (long i = 0; i &lt; local_n; i++)
+local_sum += local_A[i];
+MPI_Reduce(&amp;local_sum, &amp;global_sum, 1, MPI_DOUBLE, MPI_SUM, 0,
+MPI_COMM_WORLD);
+if (rank == 0) {
+double expected = (N * (N + 1)) / 2.0;
+printf(&quot;Total Sum = %.0f | Expected = %.0f | Diff = %.5f\n&quot;, global_sum, expected,
+expected - global_sum);
+free(A);
+}
+free(local_A);
+MPI_Finalize();
+return 0;
+}
+
+Bonus Challenge (Sum + Average + Timing)
+#include &lt;mpi.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+int main(int argc, char* argv[]) {
+int rank, size;
+long N = 10000000;
+double *A = NULL, *local_A = NULL;
+double local_sum = 0.0, global_sum = 0.0, global_avg = 0.0;
+MPI_Init(&amp;argc, &amp;argv);
+MPI_Comm_rank(MPI_COMM_WORLD, &amp;rank);
+MPI_Comm_size(MPI_COMM_WORLD, &amp;size);
+long local_n = N / size;
+local_A = (double*)malloc(local_n * sizeof(double));
+double start_time = MPI_Wtime();
+if (rank == 0) {
+A = (double*)malloc(N * sizeof(double));
+for (long i = 0; i &lt; N; i++)
+A[i] = i + 1;
+}
+MPI_Scatter(A, local_n, MPI_DOUBLE, local_A, local_n, MPI_DOUBLE, 0,
+MPI_COMM_WORLD);
+for (long i = 0; i &lt; local_n; i++)
+local_sum += local_A[i];
+MPI_Allreduce(&amp;local_sum, &amp;global_sum, 1, MPI_DOUBLE, MPI_SUM,
+MPI_COMM_WORLD);
+global_avg = global_sum / N;
+double end_time = MPI_Wtime();
+double elapsed = end_time - start_time;
+if (rank == 0) {
+double expected = (N * (N + 1)) / 2.0;
+printf(&quot;Total Sum = %.0f | Expected = %.0f | Avg = %.2f\n&quot;, global_sum, expected,
+global_avg);
+printf(&quot;Execution Time (parallel) = %.6f seconds\n&quot;, elapsed);
+free(A);
+}
+free(local_A);
+
+MPI_Finalize();
+return 0;
+}
+
+Sample Output
+Total Sum = 50000005000000 | Expected = 50000005000000 | Diff = 0.00000
+Discussion Questions
+1. If N isn’t divisible by the number of processes, some data elements will remain
+undistributed. To handle it, use MPI_Scatterv() for variable send counts.
+2. Use MPI_Scatterv() for uneven partitions so each process receives its proper share.
+3. MPI_Reduce is faster and uses less memory than MPI_Gather + local sum since it performs
+direct reduction during communication.
+4. This approach can be extended to matrices by distributing rows or elements and using
+the same reduction or averaging method.
+Conclusion
+This lab demonstrated how distributed computing efficiently divides large computations
+across multiple processes. Using MPI functions such as MPI_Scatter, MPI_Reduce, and
+MPI_Allreduce, we achieved correct and parallelized summation and averaging. The results
+matched the expected values, confirming the correctness and effectiveness of the approach.
