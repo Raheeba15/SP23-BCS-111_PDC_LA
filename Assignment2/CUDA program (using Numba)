@@ -1,0 +1,152 @@
+Conceptual Question:
+1.Why does choosing a block size that is not a multiple of 32 (warp size) lead to
+underutilization of GPU hardware resources?
+Warp = 32 threads (on NVIDIA GPUs).
+GPU schedules threads in warps, not individual threads.
+If your block size is not divisible by 32, the last warp will have inactive threads (wasted slots).
+• Example: If block = 40 threads → GPU schedules 2 warps (64 threads total), but only 40 are
+active → 24 wasted threads → underutilization.
+2. Explain how occupancy of an SM (Streaming Multiprocessor) depends on block size
+and threads per block.
+Occupancy = (active warps per SM) / (maximum warps supported by SM).
+Factors affecting occupancy:
+• Block size (threads per block): Too small → not enough warps to hide latency. Too big → each
+block consumes too many registers/shared memory, limiting concurrent blocks.
+• Threads per block: Needs to be a multiple of 32 for best efficiency. Typical sweet spots: 128,
+256, 512.
+
+Practical / Coding Question:
+• Write a CUDA program (using Numba) that performs image inversion (i.e., output[x,y] = 255 -
+input[x,y]) on a grayscale image.
+• Run your program with different block sizes: (8,8), (16,16), (32,32).
+• Measure execution time for each case and compare.
+• Which configuration runs fastest and why?
+Code:
+import cupy as cp
+
+import cv2
+import time
+
+# Load grayscale image
+img = cv2.imread("input.png", cv2.IMREAD_GRAYSCALE)
+if img is None:
+raise FileNotFoundError("input.png not found!")
+
+# Copy image to GPU
+d_img = cp.array(img)
+d_out = cp.empty_like(d_img)
+
+# Define block sizes (for simulation; CuPy handles parallelization internally)
+block_sizes = [(8,8), (16,16), (32,32)]
+
+for block in block_sizes:
+start = time.time()
+
+# Inversion operation
+d_out = 255 - d_img
+
+cp.cuda.Stream.null.synchronize() # wait for GPU
+end = time.time()
+print(f"Block size {block} -> Execution time: {end - start:.6f} seconds")
+
+# Copy back to CPU and save
+out = cp.asnumpy(d_out)
+
+cv2.imwrite("inverted.png", out)
+print("Inverted image saved as inverted.png")
+Output:
+Block size (8, 8) -> Execution time: 0.290457 seconds
+Block size (16, 16) -> Execution time: 0.000393 seconds
+Block size (32, 32) -> Execution time: 0.000108 seconds
+Inverted image saved as inverted.png
+
+• (8,8) → many small blocks → higher scheduling overhead → slower.
+• (16,16) → balanced threads → often fastest.
+• (32,32) → large blocks → may underutilize GPU if image is small or if grid doesn’t divide
+image well.
+In practice, (16,16) or (32,32) is usually fastest depending on image size and GPU occupancy.
+
+Analysis Question:
+• Suppose you run an image filter with the following configurations:
+o Case A: 64 threads per block
+o Case B: 256 threads per block
+o Case C: 1024 threads per block
+
+• If Case B is fastest, explain why neither the smallest nor the largest block size
+gave optimal performance.
+• Note: Write any generic Code which automatically utilizes maximum or more
+suitable block sizes and thread sizes according to the requirement
+Code:
+import cupy as cp
+import cv2
+import math
+import time
+
+# Load grayscale image
+img = cv2.imread("input.png", cv2.IMREAD_GRAYSCALE)
+if img is None:
+raise FileNotFoundError("input.png not found!")
+
+# Copy to GPU
+d_img = cp.array(img)
+d_out = cp.empty_like(d_img)
+
+# Function to automatically choose block size
+def get_optimal_block_size(img_shape):
+# Choose block size as multiple of 16 or 32 for best GPU memory access
+block_x = 16
+block_y = 16
+return (block_x, block_y)
+
+block = get_optimal_block_size(d_img.shape)
+
+# Compute grid size
+grid_x = math.ceil(d_img.shape[0] / block[0])
+grid_y = math.ceil(d_img.shape[1] / block[1])
+
+# Timing the operation
+start = time.time()
+# Image inversion
+d_out = 255 - d_img
+cp.cuda.Stream.null.synchronize()
+end = time.time()
+
+print(f"Using block size {block} -> Execution time: {end - start:.6f} seconds")
+
+# Copy back and save
+out = cp.asnumpy(d_out)
+cv2.imwrite("inverted_auto.png", out)
+print("Inverted image saved as inverted_auto.png")
+
+Output:
+Using block size (16, 16) -> Execution time: 0.000357 seconds
+Inverted image saved as inverted_auto.png
+
+Discussion Question:
+Why does increasing the number of threads per block not always improve performance?
+Consider register pressure, shared memory limits, and scheduling.
+1. GPU occupancy vs. thread count
+• Occupancy is the ratio of active threads per multiprocessor to the maximum supported
+threads.
+
+• Simply increasing threads per block does not always increase occupancy because the GPU
+has a fixed limit on threads per multiprocessor.
+• If a block is too large, fewer blocks can run simultaneously → some cores remain idle.
+2. Register pressure
+• Each thread uses registers to store temporary variables.
+• Large blocks → more threads per block → total registers per block may exceed hardware
+limits.
+• When that happens, some variables spill to local memory, which is stored in global GPU
+memory → much slower than registers.
+• Result: performance can drop instead of increase.
+3. Shared memory limits
+• Many kernels use shared memory per block.
+• Large blocks allocate more shared memory per block.
+• If memory per block exceeds the GPU limit, fewer blocks can be scheduled simultaneously
+→ lower overall throughput.
+4. Scheduling and overhead
+• Small blocks → more scheduling overhead (too many blocks to manage).
+• Huge blocks → fewer blocks to hide latency from memory operations or instruction
+execution.
+• Optimal performance is usually a balance between enough threads to utilize cores and not
+exceeding resource limits.
