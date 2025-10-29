@@ -1,0 +1,69 @@
+Assignment #4 — GPU Acceleration in
+Machine Learning
+
+Name: Raheeba Aamir
+Roll No: SP23-BCS-111(C)
+
+1. CPU vs GPU Training Comparison
+The table below shows the training time and accuracy for the same model on CPU and
+GPU.
+Devic
+e Time (s) Accurac
+y
+CPU 252.39 0.9867
+GPU 15.26 0.9870
+Interpretation:
+GPU training was roughly 16× faster than CPU with nearly identical accuracy, showing
+how GPUs accelerate deep learning workloads.
+Graph:
+
+2. Batch Size Experiment
+Training was repeated using different batch sizes to observe time and accuracy trade-
+offs.
+Batch
+Size Time (s) Accurac
+y
+16 27.28 0.9888
+64 16.06 0.9875
+256 13.96 0.9867
+1024 13.01 0.9748
+Observations:
+ Training time decreased as batch size increased.
+ Very large batch sizes slightly reduced accuracy due to fewer weight updates
+per epoch.
+
+3. Model Complexity
+Three models (Small, Medium, and Large) were trained to analyze accuracy and
+runtime differences.
+Model Time (s) Accurac
+y
+Small 13.12 0.9509
+Medium 13.19 0.9660
+Large 14.32 0.9891
+Observations:
+ Larger models took slightly more time but achieved higher accuracy.
+ The Large CNN achieved the best performance (98.9% accuracy).
+
+4. Discussion &amp; Answers
+1. Factors affecting GPU performance:
+Model size, batch size, GPU memory, and data loading efficiency.
+2. Why small models may not benefit:
+Overhead of transferring data to GPU dominates computation time.
+3. Reducing GPU idle time:
+Use pin_memory=True, increase num_workers, and optimize the data pipeline.
+4. Batch size trade-offs:
+Larger batches speed up training but can slightly reduce generalization.
+5. CPU↔GPU bottleneck:
+Reduce frequent data transfers using asynchronous loading and prefetching.
+
+5. Observations Summary
+ GPU training was about 16× faster than CPU while maintaining accuracy.
+ Increasing batch size reduced training time but slightly affected accuracy.
+ Larger models yielded better accuracy but required more computation time.
+ The Tesla T4 GPU efficiently handled all configurations without memory errors.
+
+Conclusion
+The experiments clearly show that GPU acceleration significantly reduces training
+time and scales well with larger models and batch sizes.
+Proper configuration of data loading, batch size, and model structure maximizes GPU
+efficiency for deep learning tasks.
