@@ -1,0 +1,87 @@
+cuda_code = """
+#include <cstdio>
+#include <cuda_runtime.h>
+#define CHECK_CUDA(call) { \\
+cudaError_t err = call; \\
+if (err != cudaSuccess) { \\
+printf("CUDA error at %s:%d - %s\\n", \\
+__FILE__, __LINE__, cudaGetErrorString(err));\\
+return -1; \\
+} \\
+}
+
+__global__ void kernel1(float *A, float *B, float *C, int N) {
+int i = blockIdx.x * blockDim.x + threadIdx.x;
+if (i < N) {
+C[i] = A[i] + B[i];
+}
+}
+
+__global__ void kernel2(float *C, float *D, int N) {
+int i = blockIdx.x * blockDim.x + threadIdx.x;
+if (i < N) {
+D[i] = C[i] * C[i];
+}
+
+}
+
+int main() {
+const int N = 1024;
+size_t bytes = N * sizeof(float);
+
+float *h_A = (float*)malloc(bytes);
+float *h_B = (float*)malloc(bytes);
+float *h_C = (float*)malloc(bytes);
+float *h_D = (float*)malloc(bytes);
+
+for (int i = 0; i < N; i++) {
+h_A[i] = i;
+h_B[i] = 2 * i;
+}
+
+float *d_A, *d_B, *d_C, *d_D;
+
+CHECK_CUDA(cudaMalloc(&d_A, bytes));
+CHECK_CUDA(cudaMalloc(&d_B, bytes));
+CHECK_CUDA(cudaMalloc(&d_C, bytes));
+CHECK_CUDA(cudaMalloc(&d_D, bytes));
+
+CHECK_CUDA(cudaMemcpy(d_A, h_A, bytes, cudaMemcpyHostToDevice));
+CHECK_CUDA(cudaMemcpy(d_B, h_B, bytes, cudaMemcpyHostToDevice));
+
+int threadsPerBlock = 256;
+
+int blocks = (N + threadsPerBlock - 1) / threadsPerBlock;
+
+kernel1<<<blocks, threadsPerBlock>>>(d_A, d_B, d_C, N);
+CHECK_CUDA(cudaGetLastError());
+
+kernel2<<<blocks, threadsPerBlock>>>(d_C, d_D, N);
+CHECK_CUDA(cudaGetLastError());
+
+CHECK_CUDA(cudaDeviceSynchronize());
+
+CHECK_CUDA(cudaMemcpy(h_C, d_C, bytes, cudaMemcpyDeviceToHost));
+CHECK_CUDA(cudaMemcpy(h_D, d_D, bytes, cudaMemcpyDeviceToHost));
+
+printf(" i\\tA\\tB\\tC=A+B\\tD=C^2\\n");
+for (int i = 0; i < 10; i++) {
+printf("%2d\\t%.0f\\t%.0f\\t%.0f\\t%.0f\\n", i, h_A[i], h_B[i], h_C[i], h_D[i]);
+}
+
+cudaFree(d_A);
+cudaFree(d_B);
+cudaFree(d_C);
+cudaFree(d_D);
+
+free(h_A);
+free(h_B);
+free(h_C);
+free(h_D);
+
+return 0;
+}
+"""
+
+with open("lt3.cu", "w") as f:
+f.write(cuda_code)
