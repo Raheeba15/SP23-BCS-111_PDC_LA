@@ -1,0 +1,248 @@
+Part 1: Hello GPU with CUDA
+Write a simple CUDA kernel that prints:
+Hello from thread X
+Understand how GPU threads, blocks, and grids work by experimenting
+with different
+launch configurations.
+%%writefile hello.cu
+#include <cstdio>
+#include <cuda_runtime.h>
+
+__global__ void hello_kernel(int *out) {
+int tid = blockIdx.x * blockDim.x + threadIdx.x;
+out[tid] = tid; // each thread writes its own ID
+}
+
+int main() {
+int threadsPerBlock = 4;
+int numBlocks = 2;
+int n = threadsPerBlock * numBlocks; // total threads = 8
+
+int h_out[8] = {0}; // initialize host array
+int *d_out;
+
+cudaError_t err;
+
+// Allocate memory on device
+
+err = cudaMalloc(&d_out, n * sizeof(int));
+if (err != cudaSuccess) {
+printf("cudaMalloc failed: %s\n", cudaGetErrorString(err));
+return -1;
+}
+
+// Launch kernel
+hello_kernel<<<numBlocks, threadsPerBlock>>>(d_out);
+
+// Check for kernel launch errors
+err = cudaGetLastError();
+if (err != cudaSuccess) {
+printf("Kernel launch failed: %s\n", cudaGetErrorString(err));
+return -1;
+}
+
+// Wait for GPU to finish
+cudaDeviceSynchronize();
+
+// Copy results back to CPU
+err = cudaMemcpy(h_out, d_out, n * sizeof(int), cudaMemcpyDeviceToHost);
+if (err != cudaSuccess) {
+printf("cudaMemcpy failed: %s\n", cudaGetErrorString(err));
+return -1;
+}
+
+cudaFree(d_out);
+
+// Print results
+for (int i = 0; i < n; i++) {
+printf("Hello from thread %d\n", h_out[i]);
+}
+
+return 0;
+}
+
+Part 2: Vector Addition (CPU vs GPU)
+Implement vector addition of two large arrays (e.g., 10 million elements):
+o First on CPU (normal C++ loop).
+o Then on GPU (CUDA kernel).
+Measure the execution time of both.
+Calculate the speedup ratio:
+Speedup=CPU TimeGPU Time\text{Speedup} = \frac{\text{CPU Time}}{\text{GPU
+Time}}Speedup=GPU TimeCPU Time
+%%writefile vector_add.cu
+#include <cstdio>
+#include <cstdlib>
+#include <cuda_runtime.h>
+#include <chrono>
+
+__global__ void vectorAddGPU(const float *A, const float *B, float *C, int N) {
+int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+if (i < N) {
+C[i] = A[i] + B[i];
+}
+}
+
+int main() {
+int N = 10'000'000; // 10 million elements
+size_t size = N * sizeof(float);
+
+// Allocate host memory
+float *h_A = (float*)malloc(size);
+float *h_B = (float*)malloc(size);
+float *h_C_cpu = (float*)malloc(size);
+float *h_C_gpu = (float*)malloc(size);
+
+// Initialize input arrays
+for (int i = 0; i < N; i++) {
+h_A[i] = 1.0f;
+h_B[i] = 2.0f;
+}
+
+// ================= CPU Vector Add =================
+auto start_cpu = std::chrono::high_resolution_clock::now();
+for (int i = 0; i < N; i++) {
+h_C_cpu[i] = h_A[i] + h_B[i];
+}
+auto end_cpu = std::chrono::high_resolution_clock::now();
+
+double cpu_time = std::chrono::duration<double, std::milli>(end_cpu - start_cpu).count();
+
+// ================= GPU Vector Add =================
+float *d_A, *d_B, *d_C;
+cudaMalloc(&d_A, size);
+cudaMalloc(&d_B, size);
+cudaMalloc(&d_C, size);
+
+cudaMemcpy(d_A, h_A, size, cudaMemcpyHostToDevice);
+cudaMemcpy(d_B, h_B, size, cudaMemcpyHostToDevice);
+
+int threadsPerBlock = 256;
+int blocksPerGrid = (N + threadsPerBlock - 1) / threadsPerBlock;
+
+auto start_gpu = std::chrono::high_resolution_clock::now();
+vectorAddGPU<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_B, d_C, N);
+cudaDeviceSynchronize();
+auto end_gpu = std::chrono::high_resolution_clock::now();
+double gpu_time = std::chrono::duration<double, std::milli>(end_gpu - start_gpu).count();
+
+cudaMemcpy(h_C_gpu, d_C, size, cudaMemcpyDeviceToHost);
+
+// ================= Verify =================
+bool correct = true;
+for (int i = 0; i < 10; i++) { // just check first 10 values
+if (h_C_cpu[i] != h_C_gpu[i]) {
+correct = false;
+
+break;
+}
+}
+
+// ================= Results =================
+printf("CPU Time: %.3f ms\n", cpu_time);
+printf("GPU Time: %.3f ms\n", gpu_time);
+if (gpu_time > 0)
+printf("Speedup (CPU/GPU): %.2fx\n", cpu_time / gpu_time);
+else
+printf("GPU time too small to measure.\n");
+
+printf("Verification: %s\n", correct ? "PASS" : "FAIL");
+
+// Free memory
+free(h_A); free(h_B); free(h_C_cpu); free(h_C_gpu);
+cudaFree(d_A); cudaFree(d_B); cudaFree(d_C);
+
+return 0;
+}
+
+Part 3: Image Inversion (CPU vs GPU)
+Load an image (e.g., PNG or JPG).
+Implement pixel inversion:
+new_pixel=255−old_pixel\text{new\_pixel} = 255 -
+\text{old\_pixel}new_pixel=255−old_pixel
+Do it once using a CPU loop, and again using a CUDA kernel.
+
+Compare performance and verify that the output images are identical.
+%%writefile image_invert.cu
+#include <iostream>
+#include <opencv2/opencv.hpp>
+#include <cuda_runtime.h>
+
+// CUDA kernel for image inversion
+__global__ void invertImageKernel(unsigned char* input, unsigned char* output, int size) {
+int idx = blockIdx.x * blockDim.x + threadIdx.x;
+if (idx < size) {
+output[idx] = 255 - input[idx];
+}
+}
+
+int main(int argc, char** argv) {
+if (argc < 2) {
+std::cerr << "Usage: ./image_invert input.png" << std::endl;
+return -1;
+}
+
+cv::Mat img = cv::imread(argv[1], cv::IMREAD_GRAYSCALE);
+if (img.empty()) {
+std::cerr << "Error: Could not load image " << argv[1] << std::endl;
+return -1;
+}
+
+int img_size = img.rows * img.cols;
+
+cv::Mat output_cpu(img.rows, img.cols, CV_8UC1);
+cv::Mat output_gpu(img.rows, img.cols, CV_8UC1);
+
+// ---------- CPU Inversion ----------
+double cpu_start = static_cast<double>(cv::getTickCount());
+for (int i = 0; i < img_size; i++) {
+output_cpu.data[i] = 255 - img.data[i];
+}
+double cpu_end = static_cast<double>(cv::getTickCount());
+double cpu_time = (cpu_end - cpu_start) / cv::getTickFrequency() * 1000.0; // ms
+
+// ---------- GPU Inversion ----------
+unsigned char *d_input, *d_output;
+cudaMalloc((void**)&d_input, img_size);
+cudaMalloc((void**)&d_output, img_size);
+
+cudaMemcpy(d_input, img.data, img_size, cudaMemcpyHostToDevice);
+
+int blockSize = 256;
+int gridSize = (img_size + blockSize - 1) / blockSize;
+
+cudaEvent_t start, stop;
+cudaEventCreate(&start);
+cudaEventCreate(&stop);
+cudaEventRecord(start);
+
+invertImageKernel<<<gridSize, blockSize>>>(d_input, d_output, img_size);
+
+cudaEventRecord(stop);
+cudaEventSynchronize(stop);
+
+float gpu_time = 0;
+cudaEventElapsedTime(&gpu_time, start, stop);
+
+cudaMemcpy(output_gpu.data, d_output, img_size, cudaMemcpyDeviceToHost);
+
+// ---------- Save results ----------
+cv::imwrite("inverted_cpu.png", output_cpu);
+cv::imwrite("inverted_gpu.png", output_gpu);
+
+// ---------- Print results ----------
+std::cout << "CPU Time: " << cpu_time << " ms" << std::endl;
+std::cout << "GPU Time: " << gpu_time << " ms" << std::endl;
+std::cout << "Speedup (CPU/GPU): " << cpu_time / gpu_time << "x" << std::endl;
+
+if (cv::countNonZero(output_cpu != output_gpu) == 0) {
+std::cout << "Verification: PASS" << std::endl;
+} else {
+std::cout << "Verification: FAIL" << std::endl;
+}
+
+cudaFree(d_input);
+cudaFree(d_output);
+
+return 0;
+}
